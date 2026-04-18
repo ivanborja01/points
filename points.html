@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAREA</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: monospace;
+  }
+  canvas {
+    display: block;
+    background: #0a0a0f;
+    cursor: none;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 600px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = 600;
+canvas.height = 420;
+
+let player = { x: 300, y: 210, r: 9 };
+let enemies = [];
+let mx = 300, my = 210;
+let alive = true, score = 0, best = 0, tick = 0, wave = 1;
+let state = 'start';
+let spawnRate = 90;
+let particles = [];
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  mx = (e.clientX - rect.left) * scaleX;
+  my = (e.clientY - rect.top) * scaleY;
+});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  mx = (e.touches[0].clientX - rect.left) * scaleX;
+  my = (e.touches[0].clientY - rect.top) * scaleY;
+}, { passive: false });
+
+canvas.addEventListener('click', () => {
+  if (state === 'start' || state === 'dead') startGame();
+});
+
+function startGame() {
+  player = { x: 300, y: 210, r: 9 };
+  enemies = [];
+  particles = [];
+  mx = 300;
+  my = 210;
+  alive = true;
+  score = 0;
+  tick = 0;
+  wave = 1;
+  spawnRate = 90;
+  state = 'playing';
+}
+
+function spawnEnemy() {
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  if (side === 0) { x = Math.random() * 600; y = -10; }
+  else if (side === 1) { x = 610; y = Math.random() * 420; }
+  else if (side === 2) { x = Math.random() * 600; y = 430; }
+  else { x = -10; y = Math.random() * 420; }
+
+  const speed = 1.1 + wave * 0.18 + Math.random() * 0.4;
+  const size = 5 + Math.random() * 5;
+  const hue = Math.floor(Math.random() * 60) + 340;
+  enemies.push({
+    x, y, r: size, speed, hue,
+    vx: (player.x - x) / 100,
+    vy: (player.y - y) / 100,
+    retarget: 0
+  });
+}
+
+function emitDeath(x, y) {
+  for (let i = 0; i < 28; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 1,
+      r: 2 + Math.random() * 3,
+      hue: 40 + Math.random() * 30
+    });
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, 600, 420);
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, 600, 420);
+
+  if (state === 'start') {
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.arc(300, 210, 80, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 42px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('MAREA', 300, 200);
+    ctx.font = '14px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('mueve el cursor · esquiva la marea', 300, 232);
+    ctx.fillStyle = 'rgba(255,100,100,0.8)';
+    ctx.font = '13px monospace';
+    ctx.fillText('clic para empezar', 300, 268);
+    return;
+  }
+
+  if (state === 'dead') {
+    ctx.fillStyle = 'rgba(255,60,60,0.07)';
+    ctx.fillRect(0, 0, 600, 420);
+
+    particles.forEach(p => {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = `hsl(${p.hue},90%,60%)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 36px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ARRASADO', 300, 175);
+    ctx.fillStyle = '#fff';
+    ctx.font = '18px monospace';
+    ctx.fillText(`tiempo: ${score}s`, 300, 215);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '13px monospace';
+    ctx.fillText(`mejor: ${best}s`, 300, 245);
+    ctx.fillStyle = 'rgba(255,150,150,0.8)';
+    ctx.font = '13px monospace';
+    ctx.fillText('clic para reintentar', 300, 285);
+    return;
+  }
+
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life * 0.8;
+    ctx.fillStyle = `hsl(${p.hue},90%,60%)`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Enemies
+  enemies.forEach(e => {
+    const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r * 1.5);
+    grad.addColorStop(0, `hsla(${e.hue},90%,65%,0.6)`);
+    grad.addColorStop(1, `hsla(${e.hue},90%,65%,0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `hsl(${e.hue},90%,70%)`;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Player
+  const pg = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, player.r * 2);
+  pg.addColorStop(0, 'rgba(100,200,255,0.5)');
+  pg.addColorStop(1, 'rgba(100,200,255,0)');
+  ctx.fillStyle = pg;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.r * 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#a0d8ff';
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // HUD
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${score}s`, 16, 32);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '12px monospace';
+  ctx.fillText(`mejor ${best}s`, 16, 52);
+
+  ctx.fillStyle = 'rgba(255,150,100,0.7)';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(`oleada ${wave}`, 584, 32);
+
+  // Cursor dot
+  ctx.fillStyle = 'rgba(100,200,255,0.9)';
+  ctx.beginPath();
+  ctx.arc(mx, my, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function update() {
+  if (state !== 'playing') {
+    if (state === 'dead') {
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.95;
+        p.vy *= 0.95;
+        p.life -= 0.025;
+      });
+      particles = particles.filter(p => p.life > 0);
+    }
+    return;
+  }
+
+  tick++;
+
+  // Score every second
+  if (tick % 60 === 0) {
+    score++;
+    if (score % 8 === 0) {
+      wave++;
+      spawnRate = Math.max(18, spawnRate - 8);
+    }
+  }
+
+  // Spawn enemies
+  if (tick % spawnRate === 0) spawnEnemy();
+  if (wave >= 4 && tick % Math.floor(spawnRate * 0.7) === 1) spawnEnemy();
+
+  // Move player toward cursor
+  const dx = mx - player.x;
+  const dy = my - player.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d > 1) {
+    player.x += dx * 0.18;
+    player.y += dy * 0.18;
+  }
+
+  // Move enemies & check collision
+  enemies.forEach(e => {
+    e.retarget++;
+    if (e.retarget > 40) {
+      const ex = player.x - e.x;
+      const ey = player.y - e.y;
+      const ed = Math.sqrt(ex * ex + ey * ey) || 1;
+      e.vx = (ex / ed) * e.speed;
+      e.vy = (ey / ed) * e.speed;
+      e.retarget = 0;
+    }
+    e.x += e.vx;
+    e.y += e.vy;
+
+    const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
+    if (dist < e.r + player.r - 1) {
+      emitDeath(player.x, player.y);
+      if (score > best) best = score;
+      state = 'dead';
+    }
+  });
+
+  // Remove off-screen enemies
+  enemies = enemies.filter(e =>
+    e.x > -60 && e.x < 660 && e.y > -60 && e.y < 480
+  );
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
